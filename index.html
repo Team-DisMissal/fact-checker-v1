@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website Fact Checker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(to bottom, #00A868, #F6F6F6); /* Green 500 to light grey */
+            color: #ffffff; /* White text for better contrast */
+            min-height: 100vh; /* Full viewport height */
+            display: flex;
+            justify-content: center;
+            align-items: center; /* Center content vertically */
+            padding: 2rem; /* Add some padding around the edges */
+            overflow-y: auto; /* Allow scrolling if content is long */
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+            text-align: center; /* Center everything inside the container */
+        }
+        .score-box {
+            transition: all 0.5s ease-in-out;
+            color: #1f2937; /* Dark text for score box */
+        }
+        /* Color mapping for results */
+        .score-box.low { background-color: #fca5a5; } /* Red 300 */
+        .score-box.medium { background-color: #fcd34d; } /* Yellow 300 */
+        .score-box.high { background-color: #a7f3d0; } /* Green 300 */
+        
+        /* Custom scrollbar for better feel for results section */
+        .scroll-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scroll-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Adjusting for the new design: text color for content that appears */
+        .content-box {
+            background-color: rgba(255, 255, 255, 0.95); /* Slightly transparent white for content */
+            color: #1f2937; /* Dark text for content boxes */
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+            text-align: left; /* Align text left within content boxes */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Container --><div class="container mx-auto flex flex-col items-center justify-center min-h-screen">
+        
+        <header class="mb-5">
+            <h1 class="text-3xl font-extrabold text-white">Website Fact Checker</h1>
+            <p class="text-base text-white mt-4 opacity-90">Automatically evaluate any web source using the five pillars of critical thinking.</p>
+        </header>
+
+        <!-- Input Section: Now a single, integrated rounded bar --><div class="w-full max-w-xl bg-white rounded-full flex items-center p-1 mb-10 shadow-lg">
+            <input type="url" id="urlInput" placeholder="e.g. WWW.NASA.GOV" 
+                   class="flex-grow px-4 py-3 text-gray-800 bg-transparent outline-none focus:ring-0 focus:border-transparent text-base" 
+                   value="">
+            <button id="checkButton" onclick="checkCredibility()" 
+                    class="px-6 py-3 bg-blue-700 text-white font-semibold rounded-full hover:bg-blue-800 transition duration-150 text-base disabled:bg-blue-400 flex-shrink-0">
+                Check
+            </button>
+        </div>
+        
+        <!-- Call to Action / Initial State Message --><div id="initialCta" class="text-center text-white mt-8 mb-8 opacity-90 transition-opacity duration-500 ease-in-out">
+            <h3 class="text-xl font-semibold mb-3">Ready to Check Website Credibility?</h3>
+            <p class="text-base">Enter a website URL above to analyze its credibility using the comprehensive CRAAP Test methodology. Get detailed insights on currency, relevance, authority, accuracy, and purpose.</p>
+        </div>
+
+        <!-- Contextual Search Results & Loader --><div id="loadingIndicator" class="hidden text-center p-6 mt-8 mb-8 bg-blue-800 bg-opacity-70 rounded-xl shadow-inner text-white">
+            <p id="loaderText" class="text-lg font-medium">Checking source context and reputation via Google Search...</p>
+        </div>
+
+        <!-- Final Result Section (Step 3) --><div id="finalResultContainer" class="hidden w-full max-w-xl content-box text-gray-800">
+            <h2 class="text-2xl font-bold mb-6">Final Credibility Report</h2>
+            <div id="finalResultCard" class="score-box p-4 rounded-xl text-center mb-6">
+                <p class="text-lg font-medium text-gray-700 mb-2">Automated Credibility Score:</p>
+                <h3 id="finalScore" class="text-6xl font-extrabold mb-3">--</h3>
+                <p id="finalRatingText" class="text-2xl font-semibold text-gray-800">--</p>
+            </div>
+            
+            <div class="mt-8">
+                <h4 class="text-xl font-bold mb-4">Detailed CRAAP Justification:</h4>
+                <div id="justificationText" class="p-3 bg-gray-100 rounded-lg border text-gray-700 whitespace-pre-wrap leading-relaxed text-base">
+                    <!-- Justification text will be injected here --></div>
+            </div>
+            
+            <button onclick="resetApp()" class="mt-8 px-8 py-3 w-full bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 text-lg shadow-md">
+                Evaluate New Source
+            </button>
+        </div>
+
+        <!-- Contextual Search Results (Step 2) --><div id="contextContainer" class="hidden w-full max-w-xl content-box text-gray-800">
+            <h2 class="text-2xl font-bold mb-4">Contextual Check Results</h2>
+            <div id="searchResults" class="scroll-container max-h-80 overflow-y-auto p-4 border border-gray-300 rounded-lg bg-gray-50 text-base">
+                <!-- Search results will be injected here --></div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- API & Constants Setup ---
+        const apiKey = ""; 
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        const MAX_RETRIES = 5;
+        const BASE_DELAY = 1000;
+
+        // --- Utility Functions ---
+
+        /**
+         * Generic function to safely handle API calls with exponential backoff.
+         * @param {object} payload - The request body.
+         * @param {number} attempt - Current retry attempt.
+         * @returns {Promise<object>} The API response JSON.
+         */
+        async function fetchWithBackoff(payload, attempt = 0) {
+            const delay = BASE_DELAY * Math.pow(2, attempt);
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': payload.generationConfig?.responseMimeType === "application/json" ? 'application/json' : 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 429 && attempt < MAX_RETRIES) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return fetchWithBackoff(payload, attempt + 1);
+                    }
+                    throw new Error(`API error: ${response.statusText}`);
+                }
+
+                return response.json();
+            } catch (error) {
+                if (attempt < MAX_RETRIES) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return fetchWithBackoff(payload, attempt + 1);
+                }
+                console.error("Failed to fetch from API after multiple retries:", error);
+                throw new Error("Failed to get context for the URL. Please try again.");
+            }
+        }
+
+        /**
+         * Cleans up a URL to be used in search queries.
+         * @param {string} url - The URL string.
+         * @returns {string} The cleaned domain name.
+         */
+        function cleanUrl(url) {
+            try {
+                const parsed = new URL(url);
+                return parsed.hostname.replace('www.', '');
+            } catch (e) {
+                return url;
+            }
+        }
+
+        // --- Core Application Logic ---
+
+        function resetApp() {
+            document.getElementById('urlInput').value = '';
+            document.getElementById('checkButton').disabled = false;
+            document.getElementById('loadingIndicator').classList.add('hidden');
+            document.getElementById('contextContainer').classList.add('hidden');
+            document.getElementById('finalResultContainer').classList.add('hidden');
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('finalScore').textContent = '--';
+            document.getElementById('finalRatingText').textContent = '--';
+            document.getElementById('finalResultCard').className = 'score-box p-4 rounded-xl text-center';
+            document.getElementById('justificationText').textContent = '';
+            document.getElementById('initialCta').classList.remove('hidden'); // Show initial CTA again
+            window.scrollTo(0, 0); // Scroll to top for new test
+        }
+
+        async function checkCredibility() {
+            const urlInput = document.getElementById('urlInput');
+            const url = urlInput.value.trim();
+            const button = document.getElementById('checkButton');
+            const loading = document.getElementById('loadingIndicator');
+            const loaderText = document.getElementById('loaderText');
+            const contextContainer = document.getElementById('contextContainer');
+            const searchResultsDiv = document.getElementById('searchResults');
+            const initialCta = document.getElementById('initialCta');
+
+
+            if (!url) {
+                // Using simple alert for brevity here, but typically a custom UI would be preferred
+                const message = "Please enter a valid website URL.";
+                alert(message); 
+                return;
+            }
+            
+            // 1. Setup UI for loading
+            button.disabled = true;
+            initialCta.classList.add('hidden'); // Hide initial CTA
+            loading.classList.remove('hidden');
+            contextContainer.classList.add('hidden');
+            document.getElementById('finalResultContainer').classList.add('hidden');
+            searchResultsDiv.innerHTML = '<p class="text-gray-500 italic">Searching for contextual information...</p>';
+            loaderText.textContent = 'Checking source context and reputation via Google Search...';
+
+            const cleanedDomain = cleanUrl(url);
+
+            // --- CALL 1: Contextual Search (Academic Focus) ---
+            // UPDATED QUERY to specifically target fact-checking results and media bias analysis,
+            // functionally achieving the goal of the Google Fact Check API within the Gemini tool.
+            const contextSearchQuery = `Find official fact-checks from organizations like Poynter, Snopes, or the Google Fact Check Explorer, and any high-reputation media bias ratings (like Ad Fontes) for the source domain or recent claims made by: ${cleanedDomain}.`;
+
+            const contextPayload = {
+                contents: [{ parts: [{ text: contextSearchQuery }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    // Updated persona to be an academic librarian, now explicitly mentioning fact-checks
+                    parts: [{ text: "You are an academic librarian specializing in critical information literacy. Based on the search results, provide a comprehensive summary (2-3 paragraphs) regarding the source's reputation, known academic standing, institutional biases, and any confirmed fact-check history." }]
+                },
+            };
+
+            let contextText = "";
+            let sourcesHtml = "";
+            
+            try {
+                const contextResult = await fetchWithBackoff(contextPayload);
+                contextText = contextResult.candidates?.[0]?.content?.parts?.[0]?.text || "Could not retrieve specific context for this URL. Proceeding with analysis based on common knowledge.";
+                
+                // Extract sources
+                const groundingMetadata = contextResult.candidates?.[0]?.groundingMetadata;
+                if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                    sourcesHtml = '<h4 class="text-sm font-semibold mt-4 mb-2 text-gray-700">Sources Used:</h4><ul class="list-disc list-inside text-sm text-gray-600 space-y-1">';
+                    groundingMetadata.groundingAttributions.forEach(attr => {
+                        if (attr.web?.uri && attr.web?.title) {
+                            sourcesHtml += `<li><a href="${attr.web.uri}" target="_blank" class="text-blue-500 hover:text-blue-700 hover:underline">${attr.web.title}</a></li>`;
+                        }
+                    });
+                    sourcesHtml += '</ul>';
+                }
+
+                searchResultsDiv.innerHTML = `<p class="whitespace-pre-wrap">${contextText}</p>${sourcesHtml}`;
+                
+            } catch (error) {
+                contextText = `ERROR: Could not complete contextual search: ${error.message}. Proceeding to analysis without external context.`;
+                searchResultsDiv.innerHTML = `<p class="text-red-600 font-medium">${contextText}</p>`;
+            }
+
+
+            // --- CALL 2: Automatic CRAAP Analysis (Academic Focus) ---
+            
+            loaderText.textContent = 'Performing academic CRAAP analysis and generating score...';
+
+            const analysisPrompt = `Given the website domain: ${cleanedDomain}, and the following contextual information, perform a thorough CRAAP test evaluation. Assign a score out of 100 based on the total CRAAP criteria.
+            
+            **CRAAP Criteria:**
+            - Currency: Timeliness (Is it recent/updated enough?)
+            - Relevance: Importance for typical research (Is it appropriate for a general audience?)
+            - Authority: Source of Information (Who is the author/publisher? What are their credentials?)
+            - Accuracy: Reliability and truthfulness (Is it supported by evidence? Can it be verified?)
+            - Purpose: Reason information exists (To inform, persuade, sell? Is there bias?)
+            
+            **Contextual Search Results (Includes fact-check data):**
+            ${contextText}
+            
+            Based *only* on the context above, output the total percentage, the resulting status, and a detailed paragraph of justification that explains the score across the five CRAAP criteria.`;
+
+
+            const analysisPayload = {
+                contents: [{ parts: [{ text: analysisPrompt }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "percentage": { "type": "NUMBER", "description": "The final credibility score out of 100." },
+                            "status": { "type": "STRING", "description": "The final credibility rating (e.g., 'Low Credibility', 'Generally Credible', 'Highly Credible')." },
+                            "justification": { "type": "STRING", "description": "A detailed paragraph explaining the CRAAP score breakdown across the 5 criteria and why the final status was assigned." }
+                        },
+                        "propertyOrdering": ["percentage", "status", "justification"]
+                    }
+                },
+                systemInstruction: {
+                    // Persona to prioritize academic rigor and the fact-check findings
+                    parts: [{ text: "You are a doctoral-level academic evaluator specializing in the CRAAP methodology. Based ONLY on the provided context, generate a JSON object containing the CRAAP analysis results. In your justification, prioritize academic evidence (peer-review, institutional backing, citation history, AND fact-check findings) to determine the score. The final percentage must be an integer." }]
+                },
+            };
+            
+            let percentage = 0;
+            let status = 'Error';
+            let justification = "Failed to run automated analysis.";
+
+            try {
+                const result = await fetchWithBackoff(analysisPayload);
+                const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (jsonText) {
+                    const parsedJson = JSON.parse(jsonText);
+                    percentage = parsedJson.percentage || 0;
+                    status = parsedJson.status || "Unknown Credibility";
+                    justification = parsedJson.justification || "Could not generate detailed justification.";
+                }
+
+            } catch (error) {
+                console.error("Error in automated analysis:", error);
+                justification = `ERROR in automated analysis: Could not parse the structured evaluation due to a communication error. The analysis could not be completed. (${error.message})`;
+            }
+
+            // --- 3. Update UI to show final results ---
+            
+            let colorClass = 'low';
+            if (percentage >= 80) {
+                colorClass = 'high';
+            } else if (percentage >= 40) {
+                colorClass = 'medium';
+            } else {
+                colorClass = 'low';
+            }
+
+            document.getElementById('finalScore').textContent = `${percentage}%`;
+            document.getElementById('finalRatingText').textContent = status;
+            
+            const finalResultCard = document.getElementById('finalResultCard');
+            finalResultCard.className = `score-box p-4 rounded-xl text-center ${colorClass}`;
+            document.getElementById('justificationText').textContent = justification;
+            document.getElementById('finalResultContainer').classList.remove('hidden');
+            contextContainer.classList.remove('hidden'); // Show context now
+
+            // --- 4. Final Cleanup ---
+            loading.classList.add('hidden');
+            button.disabled = false;
+            document.getElementById('finalResultContainer').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Initialize the app on load
+        window.onload = resetApp;
+        
+    </script>
+</body>
+</html>
